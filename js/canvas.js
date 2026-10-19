@@ -3,6 +3,36 @@
   'use strict';
 
   const WHITE = '#ffffff';
+  const TEXT_FONT = '"Segoe UI", system-ui, -apple-system, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", Arial, sans-serif';
+  const LINE_H = 1.24;
+
+  /* Greedy wrap that breaks on spaces when the text has any, and falls back to
+     breaking between characters so CJK (no spaces) still wraps. */
+  function wrapLine(ctx, str, maxWidth) {
+    const lines = [];
+    let cur = '';
+    let breakAt = -1;
+    let i = 0;
+    while (i < str.length) {
+      const ch = str[i];
+      if (/\s/.test(ch)) breakAt = cur.length;
+      if (cur && ctx.measureText(cur + ch).width > maxWidth) {
+        if (breakAt > 0) {
+          lines.push(cur.slice(0, breakAt));
+          cur = cur.slice(breakAt + 1);
+        } else {
+          lines.push(cur);
+          cur = '';
+        }
+        breakAt = -1;
+        continue;
+      }
+      cur += ch;
+      i += 1;
+    }
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [''];
+  }
 
   class SketchPad {
     constructor(canvas) {
@@ -17,8 +47,13 @@
       this.size = 10;
       this.eraser = false;
       this.locked = false;
+      this.textMode = false;
+      this.ghost = null;          // live preview of the text being typed
+      this.ghostAt = null;        // canvas coords of the pending text anchor
+      this.textFontPx = 52;
       this.onChange = null;
       this.onStrokeEnd = null;
+      this.onTextTap = null;
 
       this.reset();
       this.bind();
@@ -37,11 +72,95 @@
 
     setEraser(on) {
       this.eraser = !!on;
+      if (on) {
+        this.textMode = false;
+        this.setGhost(null);
+      }
+    }
+
+    setTextMode(on) {
+      this.textMode = !!on;
+      if (on) this.eraser = false;
+      else this.setGhost(null);
+    }
+
+    setTextSize(px) {
+      this.textFontPx = px;
+      if (this.ghost) this.refreshGhost();
     }
 
     setLocked(on) {
       this.locked = !!on;
-      if (on) this.endStroke();
+      if (on) {
+        this.endStroke();
+        this.textMode = false;
+        this.setGhost(null);
+      }
+    }
+
+    /* ---------------------------------------------------- text */
+
+    layoutText(text, x, y, size) {
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.font = '600 ' + size + 'px ' + TEXT_FONT;
+      const maxW = Math.max(90, this.W - 46 - x);
+      const lines = String(text).split('\n')
+        .reduce((acc, para) => acc.concat(wrapLine(ctx, para, maxW)), []);
+      ctx.restore();
+      return lines;
+    }
+
+    makeText(text, x, y) {
+      const clean = String(text == null ? '' : text).replace(/[ \t]+$/gm, '');
+      if (!clean.trim()) return null;
+      const size = this.textFontPx;
+      const lines = this.layoutText(clean, x, y, size);
+      const height = lines.length * size * LINE_H;
+      return {
+        kind: 'text',
+        color: this.color,
+        size: size,
+        text: clean,
+        x: Math.max(14, x),
+        y: Math.min(Math.max(14, y), Math.max(14, this.H - height - 18)),
+        lines: lines,
+      };
+    }
+
+    addText(text, x, y) {
+      const item = this.makeText(text, x, y);
+      if (!item) return false;
+      this.strokes.push(item);
+      this.paint(item);
+      if (this.onChange) this.onChange();
+      if (this.onStrokeEnd) this.onStrokeEnd();
+      return true;
+    }
+
+    setGhost(ghost) {
+      this.ghost = ghost || null;
+      this.redraw();
+    }
+
+    /* Re-lays out the pending text after a colour / size change. */
+    refreshGhost() {
+      const g = this.ghost;
+      if (!g || !g.raw) return;
+      const item = this.makeText(g.raw, g.x, g.y);
+      if (!item) { this.ghost = null; this.redraw(); return; }
+      this.ghost = { raw: g.raw, x: g.x, y: g.y, item: item };
+      this.redraw();
+    }
+
+    setGhostText(raw, x, y) {
+      if (arguments.length > 1) {
+        this.ghostAt = { x: x, y: y };
+      }
+      const at = this.ghostAt || { x: 60, y: 60 };
+      const item = this.makeText(raw, at.x, at.y);
+      this.ghost = item ? { raw: raw, x: at.x, y: at.y, item: item } : null;
+      this.redraw();
     }
 
     reset() {
@@ -71,6 +190,12 @@
       ctx.fillRect(0, 0, this.W, this.H);
       ctx.restore();
       this.strokes.forEach((s) => this.paint(s));
+      if (this.ghost && this.ghost.item) {
+        ctx.save();
+        ctx.globalAlpha = 0.42;
+        this.paint(this.ghost.item);
+        ctx.restore();
+      }
     }
 
     paint(s) {
@@ -82,6 +207,18 @@
       ctx.lineWidth = s.size;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+
+      if (s.kind === 'text') {
+        ctx.font = '600 ' + s.size + 'px ' + TEXT_FONT;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        const lh = s.size * LINE_H;
+        (s.lines || []).forEach((ln, i) => {
+          if (ln) ctx.fillText(ln, s.x, s.y + i * lh);
+        });
+        ctx.restore();
+        return;
+      }
 
       const pts = s.points;
       if (!pts.length) {
@@ -158,6 +295,11 @@
         if (this.locked) return;
         if (this.activePointer !== null) return;
         if (e.pointerType === 'mouse' && e.button !== 0) return;
+        if (this.textMode) {
+          if (this.onTextTap) this.onTextTap(pos(e));
+          e.preventDefault();
+          return;
+        }
         this.activePointer = e.pointerId;
         try { c.setPointerCapture(e.pointerId); } catch (err) { /* older Safari */ }
         this.current = {

@@ -41,6 +41,11 @@
       <button class="size-btn active" data-size="12" title="Medium"><span style="width:10px;height:10px;"></span></button>
       <button class="size-btn" data-size="30" title="Bold"><span style="width:17px;height:17px;"></span></button>
       <span class="divider-v"></span>
+      <button class="tool-btn" id="textBtn" title="Add text">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" />
+        </svg>
+      </button>
       <button class="tool-btn" id="eraserBtn" title="Eraser">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <g transform="rotate(-45 12 12)">
@@ -63,6 +68,18 @@
       <span class="spacer" style="flex:1"></span>
       <button class="btn btn-primary" id="submitBtn">Submit</button>
     </div>
+  </div>
+</div>
+
+<!-- text composer -->
+<div class="text-composer hidden" id="textComposer">
+  <div class="tc-main">
+    <textarea id="textInput" rows="1" maxlength="160" placeholder="Type your words…"></textarea>
+    <p class="tc-hint">Tap the canvas to move it · Enter starts a new line</p>
+  </div>
+  <div class="tc-actions">
+    <button class="btn btn-sm" id="textCancel">Cancel</button>
+    <button class="btn btn-primary btn-sm" id="textAdd">Add</button>
   </div>
 </div>
 

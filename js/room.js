@@ -24,6 +24,7 @@
 
   let previewTimer = null;
   let lastPreviewAt = 0;
+  let textAnchor = { x: 70, y: 80 };
 
   /* Phones get shorter labels so the header fits on one line. */
   const NARROW = window.matchMedia('(max-width: 560px)');
@@ -86,6 +87,12 @@
     state.pad = pad;
     pad.onChange = () => schedulePreview();
     pad.onStrokeEnd = () => sendPreview();
+    pad.setTextSize(fontForStroke(12));
+    pad.onTextTap = (p) => {
+      textAnchor = { x: p.x, y: p.y };
+      if (composerOpen()) refreshGhost();
+      else openComposer();
+    };
 
     document.querySelectorAll('.size-btn').forEach((btn) => {
       btn.onclick = () => {
@@ -93,11 +100,42 @@
         btn.classList.add('active');
         pad.setSize(Number(btn.dataset.size));
         pad.setEraser(false);
+        pad.setTextSize(fontForStroke(Number(btn.dataset.size)));
+        if (composerOpen()) refreshGhost();
         syncTools();
       };
     });
 
-    $('#eraserBtn').onclick = () => { pad.setEraser(!pad.eraser); syncTools(); };
+    $('#textBtn').onclick = () => {
+      if (state.locked) return;
+      const on = !pad.textMode;
+      pad.setTextMode(on);
+      if (on) openComposer();
+      else closeComposer();
+      syncTools();
+    };
+    $('#textAdd').onclick = () => commitText();
+    $('#textCancel').onclick = () => { pad.setTextMode(false); closeComposer(); syncTools(); };
+
+    const ta = $('#textInput');
+    ta.addEventListener('input', () => { autoGrow(ta); refreshGhost(); });
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitText(); }
+      else if (e.key === 'Escape') { pad.setTextMode(false); closeComposer(); syncTools(); }
+    });
+
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener('resize', placeComposer);
+      vv.addEventListener('scroll', placeComposer);
+    }
+    window.addEventListener('resize', placeComposer);
+
+    $('#eraserBtn').onclick = () => {
+      pad.setEraser(!pad.eraser);
+      if (pad.eraser) closeComposer();
+      syncTools();
+    };
     $('#undoBtn').onclick = () => {
       if (state.locked) return;
       pad.undo();
@@ -122,6 +160,79 @@
     $('#submitBtn').disabled = !!state.locked;
     $('#undoBtn').disabled = !!state.locked;
     $('#clearBtn').disabled = !!state.locked;
+    $('#textBtn').disabled = !!state.locked;
+    $('#textBtn').classList.toggle('active', !!state.pad.textMode);
+    const cv = $('#pad');
+    if (cv) cv.classList.toggle('text-mode', !!state.pad.textMode);
+  }
+
+  /* ------------------------------------------------------------ text tool */
+
+  /* The brush-size buttons double as the text size: fine / medium / bold. */
+  function fontForStroke(size) {
+    return Math.round(24 + size * 2.4);
+  }
+
+  function composerOpen() {
+    const el = $('#textComposer');
+    return !!el && !el.classList.contains('hidden');
+  }
+
+  /* Keeps the composer sitting right on top of the on-screen keyboard. */
+  function placeComposer() {
+    const el = $('#textComposer');
+    if (!el) return;
+    const vv = window.visualViewport;
+    let offset = 0;
+    if (vv) offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    el.style.bottom = (offset + 10) + 'px';
+  }
+
+  function autoGrow(ta) {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(110, ta.scrollHeight) + 'px';
+  }
+
+  function openComposer() {
+    const el = $('#textComposer');
+    const ta = $('#textInput');
+    el.classList.remove('hidden');
+    placeComposer();
+    autoGrow(ta);
+    refreshGhost();
+    setTimeout(() => {
+      try { ta.focus({ preventScroll: true }); } catch (err) { ta.focus(); }
+    }, 80);
+  }
+
+  function closeComposer() {
+    const el = $('#textComposer');
+    const ta = $('#textInput');
+    el.classList.add('hidden');
+    ta.value = '';
+    ta.style.height = 'auto';
+    if (document.activeElement === ta) ta.blur();
+    if (state.pad) state.pad.setGhost(null);
+  }
+
+  function refreshGhost() {
+    if (!state.pad) return;
+    state.pad.setGhostText($('#textInput').value, textAnchor.x, textAnchor.y);
+  }
+
+  function commitText() {
+    const ta = $('#textInput');
+    const raw = ta.value;
+    if (!raw.trim()) { closeComposer(); return; }
+    state.pad.setGhost(null);
+    const ok = state.pad.addText(raw, textAnchor.x, textAnchor.y);
+    const el = $('#textComposer');
+    el.classList.add('hidden');
+    ta.value = '';
+    ta.style.height = 'auto';
+    if (document.activeElement === ta) ta.blur();
+    if (ok) sendPreview();
+    syncTools();
   }
 
   /* ------------------------------------------------------------ relay */
@@ -220,6 +331,7 @@
   function applyLock(on) {
     state.locked = !!on;
     state.pad.setLocked(state.locked);
+    if (state.locked) closeComposer();
     syncTools();
     $('#statusPill').innerHTML = '<span class="dot"></span> ' + (state.locked ? 'Locked' : (state.submitted ? 'Submitted' : 'Drawing'));
   }
@@ -256,12 +368,16 @@
 
   function sendPreview() {
     if (!state.bus || !state.pad) return;
+    /* While the text composer is open the canvas carries a translucent ghost of
+       the words being typed — don't leak that onto the presenter's wall. */
+    if (composerOpen()) return;
     lastPreviewAt = Date.now();
     state.bus.publish({ t: 'preview', pid: state.id, name: state.name, data: state.pad.preview() });
   }
 
   async function submit(auto) {
     if (state.locked && !auto) return;
+    closeComposer();                      // drop the ghost before exporting
     if (!state.pad || state.pad.isEmpty()) {
       ID.toast('Draw something first');
       return;
