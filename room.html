@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Draw · Impromptu Drawing</title>
+<link rel="stylesheet" href="./css/app.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%236c5ce7'/><path d='M8 22c4-12 12-12 16-2' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/></svg>" />
+</head>
+<body>
+
+<div class="r-shell">
+  <header class="r-top">
+    <span class="brand" style="font-size:14px;">
+      <span class="brand-mark" style="width:26px;height:26px;border-radius:8px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 17c4.5-11 11.5-11 16-1.5" /></svg>
+      </span>
+      <span class="brand-name">Impromptu<span class="grad-text">Drawing</span></span>
+    </span>
+    <span class="pill" id="codePill">SPACE · · · · · · · ·</span>
+    <span class="r-prompt" id="promptText"></span>
+    <span class="spacer"></span>
+    <span class="pill hidden" id="timerPill"><span class="dot"></span><span id="timerText" class="mono">0:00</span></span>
+    <span class="pill" id="hostPill"><span class="dot"></span> <span id="hostText">Connecting…</span></span>
+    <span class="pill" id="statusPill"><span class="dot"></span> Drawing</span>
+  </header>
+
+  <div class="r-stage">
+    <div class="paper">
+      <canvas id="pad" width="1000" height="1333"></canvas>
+      <div class="watermark">Impromptu Drawing</div>
+    </div>
+  </div>
+
+  <div class="r-tools">
+    <div class="tool-row">
+      <div class="tool-scroll" id="colors"></div>
+    </div>
+    <div class="tool-row">
+      <button class="size-btn" data-size="4" title="Fine"><span style="width:5px;height:5px;"></span></button>
+      <button class="size-btn active" data-size="12" title="Medium"><span style="width:10px;height:10px;"></span></button>
+      <button class="size-btn" data-size="30" title="Bold"><span style="width:17px;height:17px;"></span></button>
+      <span class="divider-v"></span>
+      <button class="tool-btn" id="eraserBtn" title="Eraser">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <g transform="rotate(-45 12 12)">
+            <path d="M8.4 5.1a1.7 1.7 0 0 1 1.7-1.7h3.8a1.7 1.7 0 0 1 1.7 1.7v13h-7.2z" />
+            <path d="M8.4 10.9h7.2" />
+          </g>
+          <path d="M3.6 20.4h16.8" />
+        </svg>
+      </button>
+      <button class="tool-btn" id="undoBtn" title="Undo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 14L4 9l5-5" /><path d="M4 9h10a6 6 0 0 1 0 12h-3" />
+        </svg>
+      </button>
+      <button class="tool-btn" id="clearBtn" title="Clear all">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+        </svg>
+      </button>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn btn-primary" id="submitBtn">Submit</button>
+    </div>
+  </div>
+</div>
+
+<!-- name gate -->
+<div class="gate" id="gate">
+  <div class="card pad gate-card">
+    <h2 id="gateTitle">Join the space</h2>
+    <p class="muted tiny" id="gateSub" style="margin-bottom:18px;">Your name travels with your artwork to the presenter's wall.</p>
+    <div class="field" id="codeField">
+      <label class="field-label" for="codeInput">Space code</label>
+      <input class="input" id="codeInput" maxlength="12" placeholder="ABCD2345" autocapitalize="characters" autocomplete="off" />
+    </div>
+    <div class="field" style="margin-top:14px;">
+      <label class="field-label" for="nameInput">Your name</label>
+      <input class="input" id="nameInput" maxlength="24" placeholder="e.g. Mira" autocomplete="off" />
+    </div>
+    <button class="btn btn-primary btn-lg" id="joinBtn" style="width:100%;margin-top:20px;">Start drawing</button>
+    <p class="tiny muted" id="gateError" style="margin-top:10px;text-align:center;"></p>
+  </div>
+</div>
+
+<!-- submitted -->
+<div class="gate hidden" id="doneCard">
+  <div class="card pad done-card">
+    <div class="done-check">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5" /></svg>
+    </div>
+    <h2 style="font-size:20px;">Nice one — submitted!</h2>
+    <p class="muted" style="margin-top:8px;font-size:14px;">Your artwork is on the presenter's wall.</p>
+    <div class="tool-row" style="justify-content:center;margin-top:20px;">
+      <button class="btn" id="editAgainBtn">Keep editing</button>
+      <button class="btn btn-primary hidden" id="galleryBtn">See the gallery</button>
+    </div>
+  </div>
+</div>
+
+<!-- gallery after the space ends -->
+<div class="gate hidden" id="galleryCard">
+  <div class="card pad" style="max-width:760px;width:100%;max-height:86vh;overflow:auto;">
+    <h2 style="font-size:20px;">The wall</h2>
+    <p class="muted tiny" style="margin-top:4px;">Everyone's artwork from this space.</p>
+    <div class="gallery" id="galleryGrid"></div>
+    <button class="btn" id="galleryClose" style="margin-top:20px;width:100%;">Close</button>
+  </div>
+</div>
+
+<script src="vendor/mqtt.min.js"></script>
+<script src="js/common.js"></script>
+<script src="js/canvas.js"></script>
+<script src="js/room.js"></script>
+</body>
+</html>

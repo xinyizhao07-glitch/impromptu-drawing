@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Impromptu Drawing — draw together, live</title>
+<meta name="description" content="A real-time shared drawing space. Present a prompt, let everyone draw on their phone, collect every artwork instantly." />
+<link rel="stylesheet" href="./css/app.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%236c5ce7'/><path d='M8 22c4-12 12-12 16-2' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/></svg>" />
+</head>
+<body>
+<div class="landing">
+
+  <header class="topbar">
+    <span class="brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round">
+          <path d="M4 17c4.5-11 11.5-11 16-1.5" />
+        </svg>
+      </span>
+      Impromptu<span class="grad-text">Drawing</span>
+    </span>
+    <span class="pill"><span class="dot"></span> Works on any network</span>
+  </header>
+
+  <main class="hero">
+    <div class="notice landing-notice hidden" id="deletedNote"></div>
+
+    <span class="pill brand">One prompt · many hands · instant wall</span>
+
+    <h1>Draw together,<br /><span class="grad-text">right now.</span></h1>
+
+    <p class="lede">
+      Open a space, share the QR code, and watch every participant's artwork
+      appear on your wall — with their name, in real time. No shared Wi-Fi,
+      no installs, no sign-in.
+    </p>
+
+    <div class="role-grid">
+      <a class="role-card" href="./presenter.html">
+        <span class="glyph">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#6c5ce7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="13" rx="2.5" />
+            <path d="M8 21h8M12 17v4" />
+          </svg>
+        </span>
+        <h3>I'm presenting</h3>
+        <p>Open a space, show the QR code or link, run a timer, and collect every drawing as it lands.</p>
+        <span class="go">Start a space
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+        </span>
+      </a>
+
+      <a class="role-card" href="./room.html">
+        <span class="glyph">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#6c5ce7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z" />
+          </svg>
+        </span>
+        <h3>I'm drawing</h3>
+        <p>Scan the QR code, or open the link and type the space code. Enter your name and paint.</p>
+        <span class="go">Join a space
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+        </span>
+      </a>
+    </div>
+
+    <div class="steps">
+      <span><b>1</b> Presenter opens a space</span>
+      <span><b>2</b> Everyone scans the QR code</span>
+      <span><b>3</b> Draw, submit</span>
+      <span><b>4</b> Watch the wall fill up</span>
+    </div>
+  </main>
+
+  <div class="footer-note">Every session is an independent space — nothing carries over.</div>
+</div>
+
+<script>
+  (function () {
+    const params = new URLSearchParams(location.search);
+    const gone = (params.get('deleted') || '').toUpperCase();
+    if (!gone) return;
+    params.delete('deleted');
+    const rest = params.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : ''));
+    const note = document.getElementById('deletedNote');
+    if (!note) return;
+    note.textContent = 'Space ' + gone + ' was deleted — its artworks are gone from this browser. '
+      + 'Start a space whenever you want a new one.';
+    note.classList.remove('hidden');
+  })();
+</script>
+</body>
+</html>

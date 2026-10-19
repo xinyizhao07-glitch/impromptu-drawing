@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Presenter · Impromptu Drawing</title>
+<link rel="stylesheet" href="./css/app.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%236c5ce7'/><path d='M8 22c4-12 12-12 16-2' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/></svg>" />
+</head>
+<body>
+<div class="p-shell">
+
+  <header class="p-top">
+    <a class="brand" href="./index.html">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 17c4.5-11 11.5-11 16-1.5" /></svg>
+      </span>
+      Impromptu<span class="grad-text">Drawing</span>
+    </a>
+
+    <span class="pill" id="rolePill">Presenter</span>
+    <span class="pill" id="codePill">SPACE · · · · · · · ·</span>
+    <span class="pill live" id="livePill"><span class="dot"></span> Live</span>
+    <span class="pill" id="relayPill"><span class="dot"></span> <span id="relayText">Connecting…</span></span>
+
+    <span class="spacer"></span>
+
+    <select class="input" id="spaceSelect" style="width:auto;min-width:190px;padding:8px 10px;font-size:13px;" title="Switch space">
+      <option value="">Switch space…</option>
+    </select>
+    <button class="btn btn-sm" id="manageBtn">Spaces</button>
+    <button class="btn btn-sm" id="exportBtn">Export</button>
+    <button class="btn btn-sm btn-primary" id="presentBtn">Present</button>
+    <button class="btn btn-sm btn-danger" id="endBtn">End</button>
+    <button class="btn btn-sm btn-danger-solid" id="deleteBtn" title="Delete this space and all its artworks">Delete</button>
+  </header>
+
+  <div class="p-body">
+
+    <aside class="side">
+      <section class="card pad">
+        <div class="code-box">
+          <div>
+            <div class="tiny muted" style="letter-spacing:.09em;text-transform:uppercase;font-weight:700;">Space code</div>
+            <div class="code-value" id="codeValue">········</div>
+          </div>
+          <button class="btn btn-sm" id="copyCodeBtn">Copy</button>
+        </div>
+
+        <div class="qr-frame" style="margin-top:16px;">
+          <img id="qrImg" alt="Join QR code" />
+        </div>
+        <p class="tiny muted" style="text-align:center;margin-top:10px;">Scan from any network — no shared Wi-Fi needed.</p>
+
+        <div class="link-row" style="margin-top:12px;">
+          <input class="input" id="joinLink" readonly />
+          <button class="btn btn-sm btn-icon" id="copyLinkBtn" title="Copy link">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="12" height="12" rx="2" /><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
+            </svg>
+          </button>
+        </div>
+      </section>
+
+      <section class="card pad">
+        <div class="stat-row">
+          <div class="stat"><b id="statJoined">0</b><span>Joined</span></div>
+          <div class="stat"><b id="statDone">0</b><span>Submitted</span></div>
+          <div class="stat"><b id="statTime">0:00</b><span>Elapsed</span></div>
+        </div>
+
+        <div class="field" style="margin-top:18px;">
+          <label class="field-label" for="promptInput">Prompt / brief</label>
+          <textarea class="textarea" id="promptInput" placeholder="e.g. Draw how your week feels, in three colours."></textarea>
+          <div class="tiny muted" style="margin-top:6px;">Sent live to every participant's screen.</div>
+        </div>
+
+        <div class="field" style="margin-top:16px;">
+          <label class="field-label">Timer</label>
+          <div class="timer-display" id="timerDisplay">5:00</div>
+          <div class="tool-row" style="gap:6px;">
+            <button class="btn btn-sm" data-min="1">1 min</button>
+            <button class="btn btn-sm" data-min="3">3 min</button>
+            <button class="btn btn-sm" data-min="5">5 min</button>
+            <button class="btn btn-sm" data-min="10">10 min</button>
+          </div>
+          <div class="tool-row" style="margin-top:8px;">
+            <button class="btn btn-sm btn-primary" id="timerToggle" style="flex:1;">Start</button>
+            <button class="btn btn-sm" id="timerReset">Reset</button>
+          </div>
+          <div class="tiny muted" style="margin-top:8px;">Time up locks every canvas and auto-submits.</div>
+        </div>
+      </section>
+
+      <p class="tiny muted" style="padding:0 6px;">
+        Artworks travel through a public realtime relay, so this works across
+        networks and phones. Keep the code private and avoid sensitive content.
+      </p>
+    </aside>
+
+    <main>
+      <div class="wall-head">
+        <input class="input" id="titleInput" placeholder="Untitled Prompt"
+               style="border:none;background:transparent;font-size:22px;font-weight:650;padding:0;letter-spacing:-0.02em;max-width:520px;" />
+        <span class="pill" id="wallCount">0 artworks</span>
+        <span class="spacer" style="flex:1"></span>
+      </div>
+
+      <div class="notice hidden" id="localNotice">
+        <b>This page is on a local address.</b>
+        The QR code below points here, so phones on other networks (or on mobile data)
+        can't open it. For real sessions, open the hosted version of this app, or host
+        this folder on any public static host.
+      </div>
+
+      <div id="wall" class="wall"></div>
+
+      <div class="empty-wall" id="emptyWall">
+        <div class="big">Waiting for the first stroke…</div>
+        <div>Share the QR code or the link — participants land here the moment they submit.</div>
+      </div>
+    </main>
+
+  </div>
+</div>
+
+<!-- spaces manager -->
+<div class="modal hidden" id="spacesModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>Spaces</h3>
+      <span class="spacer"></span>
+      <button class="btn btn-sm" id="newSpaceBtn">New space</button>
+      <button class="btn btn-sm" id="closeSpacesBtn">Close</button>
+    </div>
+    <div class="modal-body" id="spacesList"></div>
+    <p class="tiny muted" style="margin-top:14px;">
+      Deleting a space removes its artworks from this browser and drops it from the list.
+      People still in that space are told it was deleted. This cannot be undone.
+    </p>
+  </div>
+</div>
+
+<script src="vendor/mqtt.min.js"></script>
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="js/common.js"></script>
+<script src="js/presenter.js"></script>
+</body>
+</html>
