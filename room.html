@@ -75,9 +75,10 @@
 <div class="text-composer hidden" id="textComposer">
   <div class="tc-main">
     <textarea id="textInput" rows="1" maxlength="160" placeholder="Type your words…"></textarea>
-    <p class="tc-hint">Tap the canvas to move it · Enter starts a new line</p>
+    <p class="tc-hint" id="textHint">Tap the canvas to move it · Enter starts a new line</p>
   </div>
   <div class="tc-actions">
+    <button class="btn btn-sm btn-danger hidden" id="textDelete">Delete</button>
     <button class="btn btn-sm" id="textCancel">Cancel</button>
     <button class="btn btn-primary btn-sm" id="textAdd">Add</button>
   </div>

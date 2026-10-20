@@ -547,6 +547,7 @@ body.lb-open { overflow: hidden; }
 .tool-btn svg { width: 18px; height: 18px; }
 .tool-btn:disabled { opacity: .4; cursor: not-allowed; }
 .paper canvas.text-mode { cursor: text; }
+.paper canvas.text-mode.has-sel { cursor: move; }
 
 /* text composer (floats above the on-screen keyboard) */
 .text-composer {

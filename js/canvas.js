@@ -51,9 +51,12 @@
       this.ghost = null;          // live preview of the text being typed
       this.ghostAt = null;        // canvas coords of the pending text anchor
       this.textFontPx = 52;
+      this.sel = null;            // the text block currently selected (movable)
+      this.drag = null;           // active drag session for the selection
       this.onChange = null;
       this.onStrokeEnd = null;
       this.onTextTap = null;
+      this.onSelectText = null;
 
       this.reset();
       this.bind();
@@ -75,13 +78,17 @@
       if (on) {
         this.textMode = false;
         this.setGhost(null);
+        this.clearSelection();
       }
     }
 
     setTextMode(on) {
       this.textMode = !!on;
       if (on) this.eraser = false;
-      else this.setGhost(null);
+      else {
+        this.setGhost(null);
+        this.clearSelection();
+      }
     }
 
     setTextSize(px) {
@@ -95,46 +102,163 @@
         this.endStroke();
         this.textMode = false;
         this.setGhost(null);
+        this.clearSelection();
       }
     }
 
     /* ---------------------------------------------------- text */
 
-    layoutText(text, x, y, size) {
+    layoutText(text, boxW) {
       const ctx = this.ctx;
+      const maxW = Math.max(90, boxW || this.W - 60);
       ctx.save();
-      ctx.font = '600 ' + size + 'px ' + TEXT_FONT;
-      const maxW = Math.max(90, this.W - 46 - x);
+      ctx.font = '600 ' + this.textFontPx + 'px ' + TEXT_FONT;
       const lines = String(text).split('\n')
         .reduce((acc, para) => acc.concat(wrapLine(ctx, para, maxW)), []);
       ctx.restore();
       return lines;
     }
 
-    makeText(text, x, y) {
+    /* Measures a laid-out block so it can be hit-tested and dragged. */
+    measureText(lines, size) {
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.font = '600 ' + size + 'px ' + TEXT_FONT;
+      let w = 0;
+      lines.forEach((ln) => {
+        w = Math.max(w, ctx.measureText(ln).width);
+      });
+      ctx.restore();
+      return w;
+    }
+
+    makeText(text, x, y, boxW) {
       const clean = String(text == null ? '' : text).replace(/[ \t]+$/gm, '');
       if (!clean.trim()) return null;
       const size = this.textFontPx;
-      const lines = this.layoutText(clean, x, y, size);
+      const bw = Math.max(90, boxW || (this.W - 46 - Math.max(14, x)));
+      const lines = this.layoutText(clean, bw);
       const height = lines.length * size * LINE_H;
-      return {
+      const item = {
         kind: 'text',
         color: this.color,
         size: size,
         text: clean,
-        x: Math.max(14, x),
-        y: Math.min(Math.max(14, y), Math.max(14, this.H - height - 18)),
         lines: lines,
+        boxW: bw,
+        w: this.measureText(lines, size),
+        h: height,
+        x: Math.max(14, x),
+        y: Math.max(14, y),
       };
+      this.clampText(item);
+      return item;
+    }
+
+    /* Keeps a text block fully on the paper. */
+    clampText(item) {
+      const pad = 14;
+      const maxX = this.W - pad - item.w;
+      const maxY = this.H - pad - item.h;
+      item.x = Math.max(pad, Math.min(item.x, Math.max(pad, maxX)));
+      item.y = Math.max(pad, Math.min(item.y, Math.max(pad, maxY)));
     }
 
     addText(text, x, y) {
       const item = this.makeText(text, x, y);
       if (!item) return false;
       this.strokes.push(item);
-      this.paint(item);
+      this.selectText(item);
       if (this.onChange) this.onChange();
       if (this.onStrokeEnd) this.onStrokeEnd();
+      return true;
+    }
+
+    /* ------------------------------------------- selected text (movable) */
+
+    /* Topmost text block under the point, or null. The padding makes the box
+       easy to grab with a finger instead of requiring pixel accuracy. */
+    hitText(p) {
+      const pad = 12;
+      for (let i = this.strokes.length - 1; i >= 0; i -= 1) {
+        const s = this.strokes[i];
+        if (s.kind !== 'text') continue;
+        if (p.x >= s.x - pad && p.x <= s.x + s.w + pad &&
+            p.y >= s.y - pad && p.y <= s.y + s.h + pad) return s;
+      }
+      return null;
+    }
+
+    selectText(item) {
+      this.sel = item || null;
+      this.ghost = null;
+      this.redraw();
+    }
+
+    clearSelection() {
+      if (!this.sel && !this.drag) return;
+      this.sel = null;
+      this.drag = null;
+      this.redraw();
+    }
+
+    hasSelection() {
+      return !!this.sel && this.strokes.indexOf(this.sel) >= 0;
+    }
+
+    moveSelectionTo(x, y) {
+      const it = this.sel;
+      if (!it) return;
+      it.x = x;
+      it.y = y;
+      this.clampText(it);
+    }
+
+    deleteSelected() {
+      const i = this.strokes.indexOf(this.sel);
+      if (i < 0) return false;
+      this.strokes.splice(i, 1);
+      this.sel = null;
+      this.redraw();
+      if (this.onChange) this.onChange();
+      return true;
+    }
+
+    /* Re-writes the selected block, keeping its box width and position. */
+    replaceSelectedText(text) {
+      const it = this.sel;
+      const i = this.strokes.indexOf(it);
+      if (i < 0) return false;
+      const clean = String(text == null ? '' : text).replace(/[ \t]+$/gm, '');
+      if (!clean.trim()) return this.deleteSelected();
+      const size = this.textFontPx;
+      const lines = this.layoutText(clean, it.boxW);
+      it.text = clean;
+      it.lines = lines;
+      it.size = size;
+      it.color = this.color;
+      it.w = this.measureText(lines, size);
+      it.h = lines.length * size * LINE_H;
+      this.clampText(it);
+      this.redraw();
+      if (this.onChange) this.onChange();
+      return true;
+    }
+
+    /* Applies the current colour / size to the selected block in place. */
+    restyleSelected() {
+      const it = this.sel;
+      if (!it || this.strokes.indexOf(it) < 0) return false;
+      const size = this.textFontPx;
+      const lines = this.layoutText(it.text, it.boxW);
+      it.size = size;
+      it.color = this.color;
+      it.lines = lines;
+      it.w = this.measureText(lines, size);
+      it.h = lines.length * size * LINE_H;
+      this.clampText(it);
+      this.redraw();
+      if (this.onChange) this.onChange();
       return true;
     }
 
@@ -165,6 +289,8 @@
 
     reset() {
       this.strokes = [];
+      this.sel = null;
+      this.drag = null;
       this.redraw();
       if (this.onChange) this.onChange();
     }
@@ -172,6 +298,7 @@
     undo() {
       if (!this.strokes.length) return false;
       this.strokes.pop();
+      if (this.sel && this.strokes.indexOf(this.sel) < 0) this.sel = null;
       this.redraw();
       if (this.onChange) this.onChange();
       return true;
@@ -196,6 +323,51 @@
         this.paint(this.ghost.item);
         ctx.restore();
       }
+      this.drawSelection();
+    }
+
+    /* Dashed frame + corner grips around the movable text block. */
+    drawSelection() {
+      const it = this.sel;
+      if (!it || this.strokes.indexOf(it) < 0) return;
+      const ctx = this.ctx;
+      const pad = 9;
+      const x = it.x - pad;
+      const y = it.y - pad;
+      const w = Math.max(24, it.w) + pad * 2;
+      const h = Math.max(it.size, it.h) + pad * 2;
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(108, 92, 255, .95)';
+      ctx.setLineDash([9, 6]);
+      ctx.strokeRect(x, y, w, h);
+      ctx.setLineDash([]);
+      const pts = [
+        [x, y], [x + w, y], [x, y + h], [x + w, y + h],
+      ];
+      ctx.fillStyle = '#6c5cff';
+      pts.forEach((p) => {
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], 5.5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    /* Runs an export with the selection frame temporarily removed so the
+       dashed box never leaks into a submitted artwork or live preview. */
+    withoutSelection(fn) {
+      const had = this.sel;
+      if (had) {
+        this.sel = null;
+        this.redraw();
+      }
+      const out = fn();
+      if (had) {
+        this.sel = had;
+        this.redraw();
+      }
+      return out;
     }
 
     paint(s) {
@@ -251,6 +423,7 @@
     bind() {
       const c = this.canvas;
       let raf = null;
+      let draf = null;
 
       const pos = (e) => {
         const r = c.getBoundingClientRect();
@@ -296,7 +469,22 @@
         if (this.activePointer !== null) return;
         if (e.pointerType === 'mouse' && e.button !== 0) return;
         if (this.textMode) {
-          if (this.onTextTap) this.onTextTap(pos(e));
+          const p = pos(e);
+          /* Grabbing an existing block wins over starting a new one, so a text
+             box can be repositioned by dragging anywhere inside it. */
+          const hit = this.hitText(p);
+          if (hit) {
+            this.sel = hit;
+            this.ghost = null;
+            this.drag = { id: e.pointerId, ox: p.x - hit.x, oy: p.y - hit.y, moved: false };
+            this.activePointer = e.pointerId;
+            try { c.setPointerCapture(e.pointerId); } catch (err) { /* older Safari */ }
+            this.redraw();
+            if (this.onSelectText) this.onSelectText(hit);
+            e.preventDefault();
+            return;
+          }
+          if (this.onTextTap) this.onTextTap(p);
           e.preventDefault();
           return;
         }
@@ -314,7 +502,22 @@
       }, { passive: false });
 
       c.addEventListener('pointermove', (e) => {
-        if (this.locked || !this.current || e.pointerId !== this.activePointer) return;
+        if (this.locked) return;
+        if (this.drag && e.pointerId === this.drag.id) {
+          const p = pos(e);
+          this.drag.moved = true;
+          this.moveSelectionTo(p.x - this.drag.ox, p.y - this.drag.oy);
+          if (!draf) {
+            draf = requestAnimationFrame(() => {
+              draf = null;
+              this.redraw();
+              if (this.onChange) this.onChange();
+            });
+          }
+          e.preventDefault();
+          return;
+        }
+        if (!this.current || e.pointerId !== this.activePointer) return;
         /* Coalesced events recover the points the browser batched between frames,
            which is what makes quick finger strokes look smooth instead of jagged. */
         const batch = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : null;
@@ -328,6 +531,17 @@
       }, { passive: false });
 
       const finish = (e) => {
+        if (this.drag && e.pointerId === this.drag.id) {
+          const moved = this.drag.moved;
+          this.drag = null;
+          this.activePointer = null;
+          if (moved) {
+            this.redraw();
+            if (this.onStrokeEnd) this.onStrokeEnd();
+          }
+          e.preventDefault();
+          return;
+        }
         if (e.pointerId !== this.activePointer) return;
         cancelFrame();
         if (this.current) this.paint(this.current);
@@ -346,24 +560,27 @@
     endStroke() {
       this.current = null;
       this.activePointer = null;
+      this.drag = null;
     }
 
     /* ---------------------------------------------------- output */
 
     exportPNG() {
-      return this.canvas.toDataURL('image/png');
+      return this.withoutSelection(() => this.canvas.toDataURL('image/png'));
     }
 
     preview(scale, quality) {
-      const s = scale || 0.42;
-      const tmp = document.createElement('canvas');
-      tmp.width = Math.round(this.W * s);
-      tmp.height = Math.round(this.H * s);
-      const tctx = tmp.getContext('2d');
-      tctx.fillStyle = WHITE;
-      tctx.fillRect(0, 0, tmp.width, tmp.height);
-      tctx.drawImage(this.canvas, 0, 0, tmp.width, tmp.height);
-      return tmp.toDataURL('image/jpeg', quality || 0.6);
+      return this.withoutSelection(() => {
+        const s = scale || 0.42;
+        const tmp = document.createElement('canvas');
+        tmp.width = Math.round(this.W * s);
+        tmp.height = Math.round(this.H * s);
+        const tctx = tmp.getContext('2d');
+        tctx.fillStyle = WHITE;
+        tctx.fillRect(0, 0, tmp.width, tmp.height);
+        tctx.drawImage(this.canvas, 0, 0, tmp.width, tmp.height);
+        return tmp.toDataURL('image/jpeg', quality || 0.6);
+      });
     }
   }
 

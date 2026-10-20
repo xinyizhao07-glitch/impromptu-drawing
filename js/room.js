@@ -25,6 +25,7 @@
   let previewTimer = null;
   let lastPreviewAt = 0;
   let textAnchor = { x: 70, y: 80 };
+  let editTarget = null;   // the text block currently selected for moving / editing
 
   /* Phones get shorter labels so the header fits on one line. */
   const NARROW = window.matchMedia('(max-width: 560px)');
@@ -66,6 +67,7 @@
         document.querySelectorAll('.swatch').forEach((s) => s.classList.remove('active'));
         b.classList.add('active');
         state.pad.setColor(c);
+        if (editTarget && state.pad.hasSelection()) state.pad.restyleSelected();
       };
       box.appendChild(b);
     });
@@ -78,6 +80,7 @@
       document.querySelectorAll('.swatch').forEach((s) => s.classList.remove('active'));
       custom.classList.add('active');
       state.pad.setColor(e.target.value);
+      if (editTarget && state.pad.hasSelection()) state.pad.restyleSelected();
     });
     box.appendChild(custom);
   }
@@ -89,9 +92,28 @@
     pad.onStrokeEnd = () => sendPreview();
     pad.setTextSize(fontForStroke(12));
     pad.onTextTap = (p) => {
+      /* Tapping bare paper starts a fresh block; tapping a block selects it. */
       textAnchor = { x: p.x, y: p.y };
-      if (composerOpen()) refreshGhost();
-      else openComposer();
+      const wasEditing = !!editTarget;
+      if (wasEditing) {
+        editTarget = null;
+        pad.selectText(null);
+      }
+      if (!composerOpen()) { openComposer('new'); return; }
+      if (wasEditing) {
+        /* Leaving the selected block behind: start with a clean box. */
+        const box = $('#textInput');
+        box.value = '';
+        setComposerMode('new');
+        autoGrow(box);
+      }
+      refreshGhost();
+    };
+    pad.onSelectText = (item) => {
+      if (editTarget === item && composerOpen()) return;
+      editTarget = item;
+      openComposer('edit');
+      syncTools();
     };
 
     document.querySelectorAll('.size-btn').forEach((btn) => {
@@ -101,7 +123,8 @@
         pad.setSize(Number(btn.dataset.size));
         pad.setEraser(false);
         pad.setTextSize(fontForStroke(Number(btn.dataset.size)));
-        if (composerOpen()) refreshGhost();
+        if (editTarget && pad.hasSelection()) pad.restyleSelected();
+        else if (composerOpen()) refreshGhost();
         syncTools();
       };
     });
@@ -110,15 +133,26 @@
       if (state.locked) return;
       const on = !pad.textMode;
       pad.setTextMode(on);
-      if (on) openComposer();
+      if (on) openComposer(pad.hasSelection() ? 'edit' : 'new');
       else closeComposer();
       syncTools();
     };
     $('#textAdd').onclick = () => commitText();
+    $('#textDelete').onclick = () => {
+      pad.deleteSelected();
+      editTarget = null;
+      closeComposer();
+      sendPreview();
+      syncTools();
+    };
     $('#textCancel').onclick = () => { pad.setTextMode(false); closeComposer(); syncTools(); };
 
     const ta = $('#textInput');
-    ta.addEventListener('input', () => { autoGrow(ta); refreshGhost(); });
+    ta.addEventListener('input', () => {
+      autoGrow(ta);
+      if (editTarget) pad.replaceSelectedText(ta.value);
+      else refreshGhost();
+    });
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitText(); }
       else if (e.key === 'Escape') { pad.setTextMode(false); closeComposer(); syncTools(); }
@@ -163,7 +197,10 @@
     $('#textBtn').disabled = !!state.locked;
     $('#textBtn').classList.toggle('active', !!state.pad.textMode);
     const cv = $('#pad');
-    if (cv) cv.classList.toggle('text-mode', !!state.pad.textMode);
+    if (cv) {
+      cv.classList.toggle('text-mode', !!state.pad.textMode);
+      cv.classList.toggle('has-sel', !!state.pad.hasSelection());
+    }
   }
 
   /* ------------------------------------------------------------ text tool */
@@ -193,16 +230,44 @@
     ta.style.height = Math.min(110, ta.scrollHeight) + 'px';
   }
 
-  function openComposer() {
+  /* Two modes: 'new' is an empty box waiting to be placed, 'edit' means an
+     existing block is selected — it can be dragged around the paper. */
+  function setComposerMode(mode) {
+    const editing = mode === 'edit';
+    $('#textAdd').textContent = editing ? 'Update' : 'Add';
+    $('#textDelete').classList.toggle('hidden', !editing);
+    const hint = $('#textHint');
+    if (hint) {
+      hint.textContent = editing
+        ? 'Drag the box on the canvas to move it · change colour or size to restyle'
+        : 'Tap the canvas to place it · Enter starts a new line';
+    }
+  }
+
+  function openComposer(mode) {
     const el = $('#textComposer');
     const ta = $('#textInput');
+    const editing = mode === 'edit' && editTarget;
+    if (editing) {
+      if (ta.value !== editTarget.text) ta.value = editTarget.text;
+    } else if (mode !== 'edit') {
+      ta.value = '';
+    }
     el.classList.remove('hidden');
+    setComposerMode(editing ? 'edit' : 'new');
     placeComposer();
     autoGrow(ta);
-    refreshGhost();
-    setTimeout(() => {
-      try { ta.focus({ preventScroll: true }); } catch (err) { ta.focus(); }
-    }, 80);
+    if (editing) state.pad.setGhost(null);
+    else refreshGhost();
+    /* Only focus for a brand-new block: in edit mode the keyboard would cover
+       the canvas the user is about to drag on. */
+    if (!editing) {
+      setTimeout(() => {
+        try { ta.focus({ preventScroll: true }); } catch (err) { ta.focus(); }
+      }, 80);
+    } else if (document.activeElement === ta) {
+      ta.blur();
+    }
   }
 
   function closeComposer() {
@@ -212,7 +277,11 @@
     ta.value = '';
     ta.style.height = 'auto';
     if (document.activeElement === ta) ta.blur();
-    if (state.pad) state.pad.setGhost(null);
+    editTarget = null;
+    if (state.pad) {
+      state.pad.setGhost(null);
+      state.pad.clearSelection();
+    }
   }
 
   function refreshGhost() {
@@ -223,15 +292,31 @@
   function commitText() {
     const ta = $('#textInput');
     const raw = ta.value;
+
+    /* Editing an existing block: rewrite it in place and keep it selected so
+       the user can still drag it around. */
+    if (editTarget && state.pad.hasSelection()) {
+      state.pad.replaceSelectedText(raw);
+      if (document.activeElement === ta) ta.blur();
+      sendPreview();
+      syncTools();
+      return;
+    }
+
     if (!raw.trim()) { closeComposer(); return; }
     state.pad.setGhost(null);
     const ok = state.pad.addText(raw, textAnchor.x, textAnchor.y);
-    const el = $('#textComposer');
-    el.classList.add('hidden');
-    ta.value = '';
-    ta.style.height = 'auto';
-    if (document.activeElement === ta) ta.blur();
-    if (ok) sendPreview();
+    if (ok) {
+      /* The new block stays selected — it is now a movable text box. */
+      editTarget = state.pad.sel;
+      ta.value = '';
+      ta.style.height = 'auto';
+      if (document.activeElement === ta) ta.blur();
+      openComposer('edit');
+      sendPreview();
+    } else {
+      closeComposer();
+    }
     syncTools();
   }
 
@@ -368,9 +453,10 @@
 
   function sendPreview() {
     if (!state.bus || !state.pad) return;
-    /* While the text composer is open the canvas carries a translucent ghost of
-       the words being typed — don't leak that onto the presenter's wall. */
-    if (composerOpen()) return;
+    /* While a brand-new block is being typed the canvas carries a translucent
+       ghost — don't leak that onto the presenter's wall. A selected (movable)
+       block is fine: the dashed frame is stripped inside preview(). */
+    if (composerOpen() && !editTarget) return;
     lastPreviewAt = Date.now();
     state.bus.publish({ t: 'preview', pid: state.id, name: state.name, data: state.pad.preview() });
   }
